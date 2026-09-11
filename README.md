@@ -53,12 +53,14 @@ python run.py
 1. Click `Open CAD…` and select a `.dwg` or `.dxf` file.
 2. Select source and target languages.
 3. Select `DeepL`, `Google`, or `LibreTranslate`.
-4. Enter the provider API key.
+4. Enter the provider API key, or use `API Keys…` to save, replace, or clear keys.
 5. Click `Translate`.
 6. Review or edit translations.
 7. Click `Save translated CAD…` and choose `.dwg` or `.dxf`.
 
-API keys stay in memory and are not written to the repository or drawing.
+API keys are stored in the operating system credential store (macOS Keychain,
+Windows Credential Manager, or the platform equivalent). They are not written
+to the repository or drawing.
 
 ## Glossary
 

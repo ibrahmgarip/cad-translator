@@ -7,12 +7,13 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
+    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
     QProgressBar, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 )
 
 from .dxf_service import DXFDocument
+from .credentials import CredentialStore, PROVIDERS
 from .glossary import Glossary
 from .memory import TranslationMemory
 from .providers import DeepLProvider, GoogleProvider, LibreTranslateProvider
@@ -54,6 +55,51 @@ class ScanWorker(QThread):
         except Exception as exc:
             self.failed.emit(f"{exc}\n\n{traceback.format_exc(limit=2)}")
 
+
+class ApiKeysDialog(QDialog):
+    def __init__(self, store: CredentialStore, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("API Keys")
+        self.store = store
+        self.fields: dict[str, QLineEdit] = {}
+        form = QFormLayout(self)
+        for provider in PROVIDERS:
+            field = QLineEdit(store.get(provider))
+            field.setEchoMode(QLineEdit.Password)
+            field.setPlaceholderText(f"{provider} API key")
+            self.fields[provider] = field
+            form.addRow(f"{provider}:", field)
+
+        help_text = QLabel("Keys are stored securely in your operating system's credential store.")
+        help_text.setWordWrap(True)
+        form.addRow(help_text)
+        buttons = QHBoxLayout()
+        clear = QPushButton("Clear all")
+        clear.clicked.connect(self.clear_all)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Save")
+        save.setDefault(True)
+        save.clicked.connect(self.save)
+        buttons.addWidget(clear)
+        buttons.addStretch(1)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        form.addRow(buttons)
+
+    def clear_all(self):
+        for field in self.fields.values():
+            field.clear()
+
+    def save(self):
+        try:
+            for provider, field in self.fields.items():
+                self.store.set(provider, field.text())
+        except Exception as exc:
+            QMessageBox.critical(self, "API key error", f"Could not save API keys:\n{exc}")
+            return
+        self.accept()
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -62,6 +108,7 @@ class MainWindow(QMainWindow):
         self.dxf: DXFDocument | None = None
         self.glossary = Glossary()
         self.memory = TranslationMemory()
+        self.credentials = CredentialStore()
         self.worker = None
         self.scan_worker = None
         self.translation_ready = False
@@ -91,12 +138,13 @@ class MainWindow(QMainWindow):
         controls = QHBoxLayout()
         self.protect_cb = QCheckBox("Protect technical tokens"); self.protect_cb.setChecked(True)
         glossary_btn = QPushButton("Load Glossary CSV…"); glossary_btn.clicked.connect(self.load_glossary)
+        api_keys_btn = QPushButton("API Keys…"); api_keys_btn.clicked.connect(self.manage_api_keys)
         self.scan_btn = QPushButton("Scan Drawing"); self.scan_btn.clicked.connect(self.scan)
         self.translate_btn = QPushButton("Translate"); self.translate_btn.clicked.connect(self.translate); self.translate_btn.setEnabled(False)
         self.save_btn = QPushButton("Save translated DXF…")
         self.save_btn.clicked.connect(self.save)
         self.save_btn.setEnabled(False)
-        controls.addWidget(self.protect_cb); controls.addWidget(glossary_btn); controls.addStretch(1)
+        controls.addWidget(self.protect_cb); controls.addWidget(glossary_btn); controls.addWidget(api_keys_btn); controls.addStretch(1)
         controls.addWidget(self.scan_btn); controls.addWidget(self.translate_btn); controls.addWidget(self.save_btn)
         layout.addLayout(controls)
 
@@ -112,6 +160,7 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         layout.addWidget(self.table, 1)
+        self.engine_changed(self.engine_combo.currentText())
 
     def closeEvent(self, event):
         self.memory.close(); super().closeEvent(event)
@@ -119,6 +168,16 @@ class MainWindow(QMainWindow):
     def engine_changed(self, name):
         self.libre_url.setVisible(name == "LibreTranslate")
         self.api_key.setPlaceholderText("Optional API key" if name == "LibreTranslate" else "API key")
+        try:
+            self.api_key.setText(self.credentials.get(name))
+        except Exception as exc:
+            self.api_key.clear()
+            self.status.setText(f"Could not read saved API key: {exc}")
+
+    def manage_api_keys(self):
+        dialog = ApiKeysDialog(self.credentials, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.engine_changed(self.engine_combo.currentText())
 
     def open_dxf(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -186,6 +245,7 @@ class MainWindow(QMainWindow):
     def build_provider(self):
         name = self.engine_combo.currentText()
         key = self.api_key.text().strip()
+        self.credentials.set(name, key)
         if name == "DeepL": return DeepLProvider(key)
         if name == "Google": return GoogleProvider(key)
         return LibreTranslateProvider(self.libre_url.text().strip(), key)
