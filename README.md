@@ -89,6 +89,14 @@ dist/CAD Translator.app
 
 The build embeds ODA File Converter inside the application bundle. Code signing and notarization are required before broad distribution outside development machines.
 
+This repository build uses ad-hoc signing when an Apple Developer ID certificate is not available. On macOS, if Gatekeeper still blocks the downloaded app, open it once with Control-click → `Open`, or run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/CAD Translator.app"
+```
+
+For a release without this first-launch step, build with an Apple Developer ID certificate and notarize the ZIP.
+
 ## Tests
 
 ```bash
