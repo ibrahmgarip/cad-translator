@@ -1,8 +1,23 @@
+import os
+
 import ezdxf
 from ezdxf.math import Vec2
 from ezdxf.render.mleader import ConnectionSide
 
-from cad_translator.dxf_service import DXFDocument
+from cad_translator.dxf_service import DXFDocument, _isolated_oda_environment
+
+
+def test_oda_environment_does_not_inherit_host_qt_paths(monkeypatch):
+    monkeypatch.setattr("cad_translator.dxf_service.sys.platform", "darwin")
+    monkeypatch.setenv("DYLD_LIBRARY_PATH", "/host/qt")
+    monkeypatch.setenv("QT_PLUGIN_PATH", "/host/plugins")
+
+    with _isolated_oda_environment():
+        assert "DYLD_LIBRARY_PATH" not in os.environ
+        assert "QT_PLUGIN_PATH" not in os.environ
+
+    assert os.environ["DYLD_LIBRARY_PATH"] == "/host/qt"
+    assert os.environ["QT_PLUGIN_PATH"] == "/host/plugins"
 
 
 def test_multileader_mtext_is_scanned_and_replaced(tmp_path):

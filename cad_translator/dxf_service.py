@@ -3,11 +3,48 @@ from __future__ import annotations
 from pathlib import Path
 import os
 import sys
+import threading
+from contextlib import contextmanager
 import ezdxf
 from ezdxf.entities import DXFEntity
 from .models import TextItem
 
 SUPPORTED = {"TEXT", "MTEXT", "ATTRIB", "ATTDEF", "MULTILEADER", "MLEADER"}
+_ODA_ENV_LOCK = threading.Lock()
+
+
+@contextmanager
+def _isolated_oda_environment():
+    """Prevent the bundled app's Qt paths leaking into ODA File Converter.
+
+    PyInstaller/PySide6 can set DYLD and Qt plugin paths for the host process.
+    ODA is a separate Qt application with its own framework/plugin versions;
+    inheriting those paths makes it load the wrong plugins on macOS.
+    """
+    if sys.platform != "darwin":
+        yield
+        return
+
+    names = (
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "QT_PLUGIN_PATH",
+        "QT_QPA_PLATFORM_PLUGIN_PATH",
+        "QML2_IMPORT_PATH",
+        "QML_IMPORT_PATH",
+    )
+    with _ODA_ENV_LOCK:
+        saved = {name: os.environ.get(name) for name in names}
+        try:
+            for name in names:
+                os.environ.pop(name, None)
+            yield
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
 
 def _configure_oda_converter() -> None:
@@ -30,7 +67,8 @@ class DXFDocument:
             from ezdxf.addons import odafc
             # R2013 keeps native MULTILEADER entities and is accepted by older
             # CAD readers that reject otherwise valid R2018 DXF files.
-            self.doc = odafc.readfile(self.path, version="R2013", audit=True)
+            with _isolated_oda_environment():
+                self.doc = odafc.readfile(self.path, version="R2013", audit=True)
         else:
             self.doc = ezdxf.readfile(self.path)
         self.items: list[TextItem] = []
@@ -96,7 +134,8 @@ class DXFDocument:
         if output.suffix.lower() == ".dwg":
             _configure_oda_converter()
             from ezdxf.addons import odafc
-            odafc.export_dwg(self.doc, output, version="R2013", audit=True, replace=True)
+            with _isolated_oda_environment():
+                odafc.export_dwg(self.doc, output, version="R2013", audit=True, replace=True)
         else:
             self.doc.saveas(output)
         return output

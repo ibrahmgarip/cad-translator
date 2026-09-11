@@ -21,9 +21,12 @@ rm -rf "dist/CAD Translator.app/Contents/Resources/ODAFileConverter.app"
 cp -R "$ODA_APP" "dist/CAD Translator.app/Contents/Resources/ODAFileConverter.app"
 
 # Copying the nested ODA app changes the outer bundle, so sign the final
-# bundle recursively. Ad-hoc signing makes the downloaded asset internally
-# consistent when no Apple Developer ID certificate is available.
-codesign --deep --force --options runtime --sign - "dist/CAD Translator.app"
+# bundle recursively. Keep the ad-hoc signature compatible with the embedded
+# Python framework. Enabling the hardened-runtime option on an ad-hoc outer
+# bundle makes macOS reject Python at launch because its mapped framework has
+# a different Team ID. A Developer ID/notarized build can add hardened runtime
+# once a real signing identity is available.
+codesign --deep --force --sign - "dist/CAD Translator.app"
 codesign --verify --deep --strict --verbose=1 "dist/CAD Translator.app"
 xattr -cr "dist/CAD Translator.app" 2>/dev/null || true
 
