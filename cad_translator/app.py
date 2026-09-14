@@ -9,7 +9,8 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
-    QProgressBar, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+    QProgressBar, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QGroupBox,
+    QGridLayout
 )
 
 from .dxf_service import DXFDocument
@@ -20,6 +21,103 @@ from .providers import DeepLProvider, GoogleProvider, LibreTranslateProvider
 from .translation_service import TranslationService
 
 LANGS = {"Russian": "ru", "Turkish": "tr", "English": "en", "German": "de", "French": "fr"}
+
+APP_STYLE = """
+QWidget {
+    font-size: 13px;
+    color: #e6edf7;
+}
+QMainWindow, QWidget#centralWidget {
+    background: #151a22;
+}
+QLabel#appTitle {
+    color: #f5f7fb;
+    font-size: 27px;
+    font-weight: 700;
+}
+QLabel#appSubtitle, QLabel#muted {
+    color: #9aa8ba;
+}
+QGroupBox {
+    background: #1d2430;
+    border: 1px solid #303b4c;
+    border-radius: 10px;
+    margin-top: 10px;
+    padding: 18px 14px 14px;
+    font-weight: 650;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 14px;
+    padding: 0 6px;
+    color: #dce6f4;
+}
+QLineEdit, QComboBox {
+    min-height: 32px;
+    border: 1px solid #3b485b;
+    border-radius: 6px;
+    padding: 0 9px;
+    background: #222b38;
+    color: #e6edf7;
+}
+QLineEdit:focus, QComboBox:focus {
+    border: 1px solid #5d9bea;
+}
+QComboBox QAbstractItemView {
+    background: #222b38;
+    color: #e6edf7;
+    selection-background-color: #315b91;
+}
+QPushButton {
+    min-height: 32px;
+    border: 1px solid #3b485b;
+    border-radius: 6px;
+    padding: 0 14px;
+    background: #263140;
+    color: #e6edf7;
+}
+QPushButton:hover { background: #303d4f; border-color: #5d7595; }
+QPushButton#primaryButton {
+    color: white;
+    background: #2769c7;
+    border-color: #2769c7;
+    font-weight: 650;
+}
+QPushButton#primaryButton:hover { background: #1e58aa; }
+QPushButton#saveButton {
+    color: white;
+    background: #218653;
+    border-color: #218653;
+    font-weight: 650;
+}
+QPushButton#saveButton:hover { background: #176b41; }
+QTableWidget {
+    border: 1px solid #303b4c;
+    border-radius: 6px;
+    background: #202834;
+    alternate-background-color: #1c232e;
+    gridline-color: #303b4c;
+    selection-background-color: #315b91;
+    selection-color: #f5f7fb;
+}
+QHeaderView::section {
+    background: #293443;
+    color: #c4d0df;
+    border: 0;
+    border-bottom: 1px solid #3b485b;
+    padding: 8px;
+    font-weight: 650;
+}
+QProgressBar {
+    min-height: 8px;
+    max-height: 8px;
+    border: 0;
+    border-radius: 4px;
+    background: #303b4c;
+    text-align: center;
+}
+QProgressBar::chunk { border-radius: 4px; background: #3978d4; }
+"""
 
 class TranslateWorker(QThread):
     done = Signal(dict)
@@ -113,45 +211,59 @@ class MainWindow(QMainWindow):
         self.scan_worker = None
         self.translation_ready = False
 
-        root = QWidget(); self.setCentralWidget(root)
+        root = QWidget(); root.setObjectName("centralWidget"); self.setCentralWidget(root)
         layout = QVBoxLayout(root)
+        layout.setContentsMargins(28, 22, 28, 24)
+        layout.setSpacing(14)
 
-        file_row = QHBoxLayout()
+        header = QVBoxLayout()
+        title = QLabel("CAD Translator"); title.setObjectName("appTitle")
+        subtitle = QLabel("Translate drawing text while keeping your CAD layout and formatting intact.")
+        subtitle.setObjectName("appSubtitle")
+        header.addWidget(title); header.addWidget(subtitle)
+        layout.addLayout(header)
+
+        file_box = QGroupBox("1. Choose a drawing")
+        file_row = QHBoxLayout(file_box)
         self.file_edit = QLineEdit(); self.file_edit.setReadOnly(True)
-        browse = QPushButton("Open CAD…"); browse.clicked.connect(self.open_dxf)
-        file_row.addWidget(QLabel("Drawing:")); file_row.addWidget(self.file_edit, 1); file_row.addWidget(browse)
-        layout.addLayout(file_row)
+        self.file_edit.setPlaceholderText("Select a DWG or DXF file to get started")
+        browse = QPushButton("Browse…"); browse.setObjectName("primaryButton"); browse.clicked.connect(self.open_dxf)
+        file_row.addWidget(self.file_edit, 1); file_row.addWidget(browse)
+        layout.addWidget(file_box)
 
-        options = QHBoxLayout()
+        options_box = QGroupBox("2. Translation settings")
+        options = QGridLayout(options_box)
+        options.setHorizontalSpacing(12); options.setVerticalSpacing(10)
         self.source_combo = QComboBox(); self.source_combo.addItems(LANGS.keys()); self.source_combo.setCurrentText("Russian")
         self.target_combo = QComboBox(); self.target_combo.addItems(LANGS.keys()); self.target_combo.setCurrentText("Turkish")
         self.engine_combo = QComboBox(); self.engine_combo.addItems(["DeepL", "Google", "LibreTranslate"])
         self.engine_combo.currentTextChanged.connect(self.engine_changed)
-        self.api_key = QLineEdit(); self.api_key.setEchoMode(QLineEdit.Password); self.api_key.setPlaceholderText("API key")
+        self.api_key = QLineEdit(); self.api_key.setEchoMode(QLineEdit.Password); self.api_key.setPlaceholderText("Saved API key or enter one here")
         self.libre_url = QLineEdit("http://localhost:5000"); self.libre_url.setVisible(False)
-        options.addWidget(QLabel("Source")); options.addWidget(self.source_combo)
-        options.addWidget(QLabel("Target")); options.addWidget(self.target_combo)
-        options.addWidget(QLabel("Engine")); options.addWidget(self.engine_combo)
-        options.addWidget(self.api_key, 1); options.addWidget(self.libre_url, 1)
-        layout.addLayout(options)
+        api_keys_btn = QPushButton("Manage API keys…"); api_keys_btn.clicked.connect(self.manage_api_keys)
+        options.addWidget(QLabel("Translate from"), 0, 0); options.addWidget(self.source_combo, 0, 1)
+        options.addWidget(QLabel("Translate to"), 0, 2); options.addWidget(self.target_combo, 0, 3)
+        options.addWidget(QLabel("Service"), 1, 0); options.addWidget(self.engine_combo, 1, 1)
+        options.addWidget(self.api_key, 1, 2); options.addWidget(api_keys_btn, 1, 3)
+        options.addWidget(self.libre_url, 2, 2, 1, 2)
+        self.protect_cb = QCheckBox("Protect technical tokens (DN100, P-101, Ø50…)"); self.protect_cb.setChecked(True)
+        glossary_btn = QPushButton("Load glossary CSV…"); glossary_btn.clicked.connect(self.load_glossary)
+        options.addWidget(self.protect_cb, 3, 0, 1, 3); options.addWidget(glossary_btn, 3, 3)
+        layout.addWidget(options_box)
 
-        controls = QHBoxLayout()
-        self.protect_cb = QCheckBox("Protect technical tokens"); self.protect_cb.setChecked(True)
-        glossary_btn = QPushButton("Load Glossary CSV…"); glossary_btn.clicked.connect(self.load_glossary)
-        api_keys_btn = QPushButton("API Keys…"); api_keys_btn.clicked.connect(self.manage_api_keys)
-        self.scan_btn = QPushButton("Scan Drawing"); self.scan_btn.clicked.connect(self.scan)
-        self.translate_btn = QPushButton("Translate"); self.translate_btn.clicked.connect(self.translate); self.translate_btn.setEnabled(False)
-        self.save_btn = QPushButton("Save translated DXF…")
-        self.save_btn.clicked.connect(self.save)
-        self.save_btn.setEnabled(False)
-        controls.addWidget(self.protect_cb); controls.addWidget(glossary_btn); controls.addWidget(api_keys_btn); controls.addStretch(1)
-        controls.addWidget(self.scan_btn); controls.addWidget(self.translate_btn); controls.addWidget(self.save_btn)
-        layout.addLayout(controls)
+        actions = QHBoxLayout()
+        self.scan_btn = QPushButton("Scan drawing"); self.scan_btn.clicked.connect(self.scan)
+        self.translate_btn = QPushButton("Translate"); self.translate_btn.setObjectName("primaryButton"); self.translate_btn.clicked.connect(self.translate); self.translate_btn.setEnabled(False)
+        self.save_btn = QPushButton("Save translated file…"); self.save_btn.setObjectName("saveButton")
+        self.save_btn.clicked.connect(self.save); self.save_btn.setEnabled(False)
+        actions.addWidget(self.scan_btn); actions.addWidget(self.translate_btn); actions.addStretch(1); actions.addWidget(self.save_btn)
+        layout.addLayout(actions)
 
-        self.status = QLabel("Open a DXF drawing to begin.")
+        results_box = QGroupBox("3. Review translations")
+        results_layout = QVBoxLayout(results_box)
+        self.status = QLabel("Choose a drawing to begin."); self.status.setObjectName("muted")
         self.progress = QProgressBar(); self.progress.setRange(0, 1); self.progress.setValue(0); self.progress.setVisible(False)
-        layout.addWidget(self.status); layout.addWidget(self.progress)
-
+        results_layout.addWidget(self.status); results_layout.addWidget(self.progress)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["Type", "Layer", "Handle", "Original", "Translation"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -159,7 +271,8 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
-        layout.addWidget(self.table, 1)
+        results_layout.addWidget(self.table, 1)
+        layout.addWidget(results_box, 1)
         self.engine_changed(self.engine_combo.currentText())
 
     def closeEvent(self, event):
@@ -305,6 +418,8 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("CAD Translator")
+    app.setStyle("Fusion")
+    app.setStyleSheet(APP_STYLE)
     w = MainWindow(); w.show()
     raise SystemExit(app.exec())
 
