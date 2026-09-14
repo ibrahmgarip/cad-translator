@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .dxf_service import DXFDocument
+from .oda import ODAFileConverterNotFound
 from .credentials import CredentialStore, PROVIDERS
 from .glossary import Glossary
 from .memory import TranslationMemory
@@ -150,6 +151,8 @@ class ScanWorker(QThread):
         try:
             dxf = DXFDocument(self.path)
             self.done.emit(dxf, dxf.scan())
+        except ODAFileConverterNotFound as exc:
+            self.failed.emit(str(exc))
         except Exception as exc:
             self.failed.emit(f"{exc}\n\n{traceback.format_exc(limit=2)}")
 

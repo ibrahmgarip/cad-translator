@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import ezdxf
 from ezdxf.entities import DXFEntity
 from .models import TextItem
+from .oda import require_oda_converter
 
 SUPPORTED = {"TEXT", "MTEXT", "ATTRIB", "ATTDEF", "MULTILEADER", "MLEADER"}
 _ODA_ENV_LOCK = threading.Lock()
@@ -47,24 +48,11 @@ def _isolated_oda_environment():
                     os.environ[name] = value
 
 
-def _configure_oda_converter() -> None:
-    """Point ezdxf's DWG add-on at the installed ODA converter."""
-    candidates = [
-        os.environ.get("CAD_TRANSLATOR_ODA_PATH", ""),
-        str(Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "ODAFileConverter.app/Contents/MacOS/ODAFileConverter"),
-        "/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter",
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file():
-            ezdxf.options.set("odafc-addon", "unix_exec_path", candidate)
-            return
-
 class DXFDocument:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         if self.path.suffix.lower() == ".dwg":
-            _configure_oda_converter()
-            from ezdxf.addons import odafc
+            odafc = require_oda_converter()
             # R2013 keeps native MULTILEADER entities and is accepted by older
             # CAD readers that reject otherwise valid R2018 DXF files.
             with _isolated_oda_environment():
@@ -132,8 +120,7 @@ class DXFDocument:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         if output.suffix.lower() == ".dwg":
-            _configure_oda_converter()
-            from ezdxf.addons import odafc
+            odafc = require_oda_converter()
             with _isolated_oda_environment():
                 odafc.export_dwg(self.doc, output, version="R2013", audit=True, replace=True)
         else:
