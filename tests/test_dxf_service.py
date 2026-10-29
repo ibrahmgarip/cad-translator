@@ -40,3 +40,22 @@ def test_multileader_mtext_is_scanned_and_replaced(tmp_path):
     drawing.save_as(tmp_path / "translated.dxf")
     reloaded = DXFDocument(tmp_path / "translated.dxf")
     assert [item.original for item in reloaded.scan() if item.entity_type == "MULTILEADER"] == ["Tavan altında"]
+
+
+def test_save_registers_xdata_appids_missing_from_appid_table(tmp_path):
+    doc = ezdxf.new("R2013")
+    line = doc.modelspace().add_line((0, 0), (1, 0))
+    line.set_xdata("UNREGISTERED_APP", [(1000, "value")])
+    line.set_xdata("BAD<NAME>", [(1000, "value")])
+    path = tmp_path / "xdata.dxf"
+    doc.saveas(path)
+
+    drawing = DXFDocument(path)
+    assert "UNREGISTERED_APP" not in drawing.doc.appids
+    drawing.save_as(tmp_path / "translated.dxf")
+
+    reloaded = ezdxf.readfile(tmp_path / "translated.dxf")
+    reloaded_line = reloaded.modelspace().query("LINE")[0]
+    assert "UNREGISTERED_APP" in reloaded.appids
+    assert reloaded_line.has_xdata("UNREGISTERED_APP")
+    assert not reloaded_line.has_xdata("BAD<NAME>")

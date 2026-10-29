@@ -1,0 +1,36 @@
+name: Windows release build
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the Windows build to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - run: python -m PyInstaller --noconfirm --clean --windowed --onedir --name "CAD Translator" run.py
+      - name: Package and upload
+        shell: pwsh
+        run: |
+          $zip = "dist/CAD-Translator-$env:TAG-Windows-x64.zip"
+          Compress-Archive -Path "dist/CAD Translator" -DestinationPath $zip -Force
+          gh release upload $env:TAG $zip --clobber

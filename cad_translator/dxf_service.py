@@ -7,6 +7,7 @@ import threading
 from contextlib import contextmanager
 import ezdxf
 from ezdxf.entities import DXFEntity
+from ezdxf.lldxf.validator import is_valid_table_name
 from .models import TextItem
 from .oda import require_oda_converter
 
@@ -46,6 +47,29 @@ def _isolated_oda_environment():
                     os.environ.pop(name, None)
                 else:
                     os.environ[name] = value
+
+
+def _repair_xdata_appids(doc) -> int:
+    """Register every XDATA application name in the APPID table.
+
+    ezdxf's auditor does not cross-check XDATA (group code 1001) against the
+    APPID table, but ODA File Converter rejects such DXF files with
+    "Invalid RegApp". XDATA whose application name cannot be a table entry
+    name is discarded instead.
+    """
+    repaired = 0
+    for entity in list(doc.entitydb.values()):
+        xdata = getattr(entity, "xdata", None)
+        if not xdata:
+            continue
+        for appid in list(xdata.data):
+            if not isinstance(appid, str) or not appid.strip() or not is_valid_table_name(appid):
+                xdata.discard(appid)
+                repaired += 1
+            elif appid not in doc.appids:
+                doc.appids.add(appid)
+                repaired += 1
+    return repaired
 
 
 class DXFDocument:
@@ -119,6 +143,7 @@ class DXFDocument:
     def save_as(self, output_path: str | Path) -> Path:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
+        _repair_xdata_appids(self.doc)
         if output.suffix.lower() == ".dwg":
             odafc = require_oda_converter()
             with _isolated_oda_environment():
